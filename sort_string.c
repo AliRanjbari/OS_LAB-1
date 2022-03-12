@@ -2,11 +2,12 @@
 #include "stat.h"
 #include "user.h"
 #include "fs.h"
+#include "fcntl.h"
 
 
 
 void
-sort_string(char* string){
+sort_string(char* string, int fd){
     int length = strlen(string);
 
     for(int i=0; i<length; i++)
@@ -16,8 +17,9 @@ sort_string(char* string){
                 string[i] = string[j];
                 string[j] = temp;
             }
-    
-    printf(1, "%s\n", string);
+
+    write(fd, string, strlen(string));
+    write(fd, "\n", 1);
 }
 
 
@@ -26,8 +28,11 @@ main(int argc, char *argv[]){
     if(argc < 2){
         printf(1, "please enter a string\n");
     }
-    else
-        sort_string(argv[1]);
+    else{
+        close(1);                   //close fd 1
+        int fd = open("sort_string.txt", O_CREATE|O_WRONLY);      
+        sort_string(argv[1], fd);
+        close(fd);
+    }
     exit();
-
 }
