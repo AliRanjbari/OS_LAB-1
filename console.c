@@ -178,6 +178,8 @@ consputc(int c)
   cgaputc(c);
 }
 
+
+
 #define INPUT_BUF 128
 struct {
   char buf[INPUT_BUF];
@@ -192,7 +194,7 @@ void
 consoleintr(int (*getc)(void))
 {
   int c, doprocdump = 0;
-
+  int pos;
   acquire(&cons.lock);
   while((c = getc()) >= 0){
     switch(c){
@@ -213,11 +215,42 @@ consoleintr(int (*getc)(void))
         consputc(BACKSPACE);
       }
       break;
+    case 228:  // left arrow  
+      outb(CRTPORT, 14);
+      pos = inb(CRTPORT+1) << 8;
+      outb(CRTPORT, 15);
+      pos |= inb(CRTPORT+1);
+      if(pos%80 > 2){
+        pos--;
+        outb(CRTPORT+1, pos);
+      }
+      break;
+    case 229:  // right arrow
+      outb(CRTPORT, 14);
+      pos = inb(CRTPORT+1) << 8;
+      outb(CRTPORT, 15);
+      pos |= inb(CRTPORT+1);
+      if(pos%80 < 2+input.e){
+        pos++;
+        outb(CRTPORT+1, pos);
+      }
+      break;
+
+    case 226:  // up arrow  
+      outb(CRTPORT, 14);
+      pos = inb(CRTPORT+1) << 8;
+      outb(CRTPORT, 15);
+      pos |= inb(CRTPORT+1);
+      consputc((char)pos);
+      break;
+
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
         input.buf[input.e++ % INPUT_BUF] = c;
         consputc(c);
+
+
         if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
           input.w = input.e;
           wakeup(&input.r);
