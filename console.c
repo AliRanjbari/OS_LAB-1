@@ -256,7 +256,7 @@ move_cursor(int direction, int last_index){   // direction 0 for right 1 for lef
 }
 
 void
-backspace(int last_index){
+move_backward(int last_index){        //movig all characters in buffer and CGA to the left
   outb(CRTPORT, 14);
   int pos = inb(CRTPORT+1) << 8;
   outb(CRTPORT, 15);
@@ -266,6 +266,24 @@ backspace(int last_index){
     crt[pos] = (input.buf[i%INPUT_BUF]&0xff) | 0x0700;    //Move all chars one left
     pos++;
   }
+}
+
+void
+move_forward(int last_index, char c){
+
+  outb(CRTPORT, 14);
+  int pos = inb(CRTPORT+1) << 8;
+  outb(CRTPORT, 15);
+  pos |= inb(CRTPORT+1);
+  pos += 1+last_index-input.e;
+  for(int i=last_index+1;i > input.e;i--){
+    input.buf[i%INPUT_BUF] = input.buf[(i-1)%INPUT_BUF];
+    crt[pos] = (input.buf[i%INPUT_BUF]&0xff) | 0x0700;
+    pos--;
+  }
+  crt[pos] = (c&0xff) | 0x0700;
+  input.buf[input.e%INPUT_BUF] = c;
+  outb(CRTPORT+1, pos);
 }
 
 #define C(x)  ((x)-'@')  // Control-x
@@ -298,7 +316,7 @@ consoleintr(int (*getc)(void))
     case C('H'): case '\x7f':  // Backspace
       if(input.e != input.w){
         consputc(BACKSPACE);
-        backspace(last_index);
+        move_backward(last_index);
         input.e--;
         last_index--;
       }
@@ -309,22 +327,28 @@ consoleintr(int (*getc)(void))
     case RIGHT_ARROW:  
       move_cursor(0, last_index);
       break;
-    case UP_ARROW:   
+    case UP_ARROW:
       show_last_command();
+      last_index = input.e;
       break;
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
-
-        input.buf[input.e++ % INPUT_BUF] = c;
+        char temp = input.buf[input.e%INPUT_BUF];
+        if(c != '\n')
+          input.buf[input.e++ % INPUT_BUF] = c;
         consputc(c); 
 
-        if(last_index < input.e)
+        if(last_index > input.e && c != '\n'){
+          move_forward(last_index, temp);
+          last_index++;
+        }
+        else if(last_index < input.e)
           last_index = input.e;
 
-
-
         if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
+          input.e = ++last_index;
+          input.buf[input.e++ % INPUT_BUF] = '\n';
           save_command();
           input.w = input.e;
           wakeup(&input.r);
