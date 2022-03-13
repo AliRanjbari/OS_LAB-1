@@ -192,14 +192,11 @@ struct {
 #define COMMAND_SAVED 10
 struct {
   char list[COMMAND_SAVED][INPUT_BUF];
-  uint s;      // last command position
-  uint r;     // number of commands saved
-  uint e;      // last read command
+  uint s;     // first command
+  uint r;     // read commands
+  uint e;     // last command
 }saved_cmd;
 
-
-// char commands[COMMAND_SAVED][INPUT_BUF];
-// int cmp_count = 0;
 
 void
 save_command(){      // save last command
@@ -234,13 +231,56 @@ show_last_command(){
   }
 }
 
+
+void
+move_cursor(int direction, int last_index){   // direction 0 for right 1 for left
+  outb(CRTPORT, 14);
+  int pos = inb(CRTPORT+1) << 8;
+  outb(CRTPORT, 15);
+  pos |= inb(CRTPORT+1);
+
+  if(direction){          // back
+    if(pos%80 > 2){
+        pos--;
+        input.e--;
+        outb(CRTPORT+1, pos);
+      }
+  }
+  else{
+    if(pos%80 < 2+(last_index)){
+        pos++;
+        input.e++;
+        outb(CRTPORT+1, pos);
+      }
+  }
+}
+
+void
+backspace(int last_index){
+  outb(CRTPORT, 14);
+  int pos = inb(CRTPORT+1) << 8;
+  outb(CRTPORT, 15);
+  pos |= inb(CRTPORT+1);
+  for(int i=input.e-1;i<last_index;i++){
+    input.buf[i%INPUT_BUF] = input.buf[(i+1)%INPUT_BUF];   //Remove a char in middle
+    crt[pos] = (input.buf[i%INPUT_BUF]&0xff) | 0x0700;    //Move all chars one left
+    pos++;
+  }
+}
+
 #define C(x)  ((x)-'@')  // Control-x
+#define UP_ARROW 226
+#define LEFT_ARROW 228
+#define RIGHT_ARROW 229
 
 void
 consoleintr(int (*getc)(void))
 {
   int c, doprocdump = 0;
-  int pos;
+  // static int cur_has_moved = 0;
+  static int last_index = 0;
+
+
   acquire(&cons.lock);
   while((c = getc()) >= 0){
     switch(c){
@@ -257,40 +297,31 @@ consoleintr(int (*getc)(void))
       break;
     case C('H'): case '\x7f':  // Backspace
       if(input.e != input.w){
-        input.e--;
         consputc(BACKSPACE);
+        backspace(last_index);
+        input.e--;
+        last_index--;
       }
       break;
-    case 228:  // left arrow  
-      outb(CRTPORT, 14);
-      pos = inb(CRTPORT+1) << 8;
-      outb(CRTPORT, 15);
-      pos |= inb(CRTPORT+1);
-      if(pos%80 > 2){
-        pos--;
-        outb(CRTPORT+1, pos);
-      }
+    case LEFT_ARROW:
+      move_cursor(1, last_index);
       break;
-    case 229:  // right arrow
-      outb(CRTPORT, 14);
-      pos = inb(CRTPORT+1) << 8;
-      outb(CRTPORT, 15);
-      pos |= inb(CRTPORT+1);
-      if(pos%80 < 2+(input.e-input.r)){
-        pos++;
-        outb(CRTPORT+1, pos);
-      }
+    case RIGHT_ARROW:  
+      move_cursor(0, last_index);
       break;
-
-    case 226:  // up arrow  
+    case UP_ARROW:   
       show_last_command();
       break;
-
     default:
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
+
         input.buf[input.e++ % INPUT_BUF] = c;
-        consputc(c);
+        consputc(c); 
+
+        if(last_index < input.e)
+          last_index = input.e;
+
 
 
         if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
