@@ -180,6 +180,7 @@ consputc(int c)
 
 
 
+
 #define INPUT_BUF 128
 struct {
   char buf[INPUT_BUF];
@@ -187,6 +188,51 @@ struct {
   uint w;  // Write index
   uint e;  // Edit index
 } input;
+
+#define COMMAND_SAVED 10
+struct {
+  char list[COMMAND_SAVED][INPUT_BUF];
+  uint s;      // last command position
+  uint r;     // number of commands saved
+  uint e;      // last read command
+}saved_cmd;
+
+
+// char commands[COMMAND_SAVED][INPUT_BUF];
+// int cmp_count = 0;
+
+void
+save_command(){      // save last command
+  int j = 0;
+  int last_index = saved_cmd.e%COMMAND_SAVED;
+  if(input.e - input.r > 1){
+    for(int i=input.r; i < input.e-1 ; i++){
+      saved_cmd.list[last_index][j] = input.buf[i%INPUT_BUF];
+      j++;
+    }
+    saved_cmd.e++;
+    saved_cmd.r = 0;
+    if(saved_cmd.e == saved_cmd.s+COMMAND_SAVED)
+      saved_cmd.s++;   
+  }
+  
+}
+
+void
+show_last_command(){
+  char* cmd = saved_cmd.list[(saved_cmd.e-saved_cmd.r-1)%COMMAND_SAVED];
+  int buf_size = input.e - input.r;
+  input.r = input.e;
+  if(saved_cmd.e - saved_cmd.s && saved_cmd.e-saved_cmd.s > saved_cmd.r){
+    for(int i=0; i<buf_size; i++)
+      consputc(BACKSPACE);
+    for(int i=0; i < strlen(cmd); i++){
+      input.buf[input.e++ % INPUT_BUF] = cmd[i];
+      consputc(cmd[i]);
+    }
+    saved_cmd.r++;
+  }
+}
 
 #define C(x)  ((x)-'@')  // Control-x
 
@@ -230,18 +276,14 @@ consoleintr(int (*getc)(void))
       pos = inb(CRTPORT+1) << 8;
       outb(CRTPORT, 15);
       pos |= inb(CRTPORT+1);
-      if(pos%80 < 2+input.e){
+      if(pos%80 < 2+(input.e-input.r)){
         pos++;
         outb(CRTPORT+1, pos);
       }
       break;
 
     case 226:  // up arrow  
-      outb(CRTPORT, 14);
-      pos = inb(CRTPORT+1) << 8;
-      outb(CRTPORT, 15);
-      pos |= inb(CRTPORT+1);
-      consputc((char)pos);
+      show_last_command();
       break;
 
     default:
@@ -252,6 +294,7 @@ consoleintr(int (*getc)(void))
 
 
         if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
+          save_command();
           input.w = input.e;
           wakeup(&input.r);
         }
